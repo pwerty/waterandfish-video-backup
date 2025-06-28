@@ -1,0 +1,6 @@
+.DS_Store
+# video files
+*.avi
+*.mp4
+*.mov
+*.npz
