@@ -12,6 +12,9 @@
             background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             height: 100vh;
             overflow: hidden;
+            /* 고정된 최소 해상도 설정 */
+            min-width: 1200px;
+            min-height: 800px;
         }
         .header {
             background: rgba(255, 255, 255, 0.9);
@@ -19,12 +22,16 @@
             padding: 15px 30px;
             color: #333;
             border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            /* 고정 높이 설정 */
+            height: 80px;
+            flex-shrink: 0;
         }
         .header-content {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 30px;
+            height: 100%;
         }
         .header-title {
             flex-shrink: 0;
@@ -81,12 +88,16 @@
         .main-container {
             display: flex;
             height: calc(100vh - 80px);
+            /* 고정된 최소 높이 설정 */
+            min-height: 720px;
         }
         .left-panel, .right-panel {
             flex: 1;
             display: flex;
             flex-direction: column;
             position: relative;
+            /* 고정된 최소 너비 설정 */
+            min-width: 600px;
         }
         .left-panel {
             background: rgba(255, 255, 255, 0.95);
@@ -102,6 +113,11 @@
             font-size: 16px;
             font-weight: 500;
             border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+            /* 고정 높이 설정 */
+            height: 50px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
         }
         .controls {
             background: rgba(255, 255, 255, 0.9);
@@ -160,11 +176,25 @@
             position: relative;
             overflow: hidden;
             background: #f8f9fa;
+            /* 고정된 최소 높이 설정 */
+            min-height: 670px;
+            /* 캔버스를 중앙에 배치하기 위한 설정 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         #landmark-canvas, #webcam-canvas {
             width: 100%;
             height: 100%;
             display: block;
+            /* 캔버스 해상도 고정 */
+            image-rendering: -webkit-optimize-contrast;
+            image-rendering: crisp-edges;
+            /* 캔버스를 중앙에 배치 */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
         .webcam-container {
             flex: 1;
@@ -173,12 +203,16 @@
             justify-content: center;
             background: #f8f9fa;
             position: relative;
+            /* 고정된 최소 높이 설정 */
+            min-height: 670px;
         }
         #webcam-video {
             max-width: 100%;
             max-height: 100%;
             border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            /* 비디오 해상도 고정 */
+            object-fit: contain;
         }
         #webcam-overlay {
             position: absolute;
@@ -234,6 +268,39 @@
             width: 12px;
             height: 12px;
             border-radius: 50%;
+        }
+        
+        /* 반응형 디자인을 위한 미디어 쿼리 */
+        @media (max-width: 1400px) {
+            body {
+                min-width: 1000px;
+            }
+            .left-panel, .right-panel {
+                min-width: 500px;
+            }
+        }
+        
+        @media (max-width: 1200px) {
+            body {
+                min-width: 800px;
+            }
+            .left-panel, .right-panel {
+                min-width: 400px;
+            }
+            .header-controls {
+                gap: 15px;
+            }
+            .control-toggles {
+                gap: 10px;
+            }
+        }
+        
+        /* 고해상도 디스플레이를 위한 설정 */
+        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+            #landmark-canvas, #webcam-canvas {
+                image-rendering: -webkit-optimize-contrast;
+                image-rendering: crisp-edges;
+            }
         }
     </style>
 </head>
@@ -359,8 +426,16 @@
         // 랜드마크 뷰어 초기화
         function initLandmarkViewer() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf8f9fa);
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / 2 / window.innerHeight, 0.001, 1000);
+            scene.background = new THREE.Color(0xf0f0f0);
+            
+            const canvas = document.getElementById('landmark-canvas');
+            const container = canvas.parentElement;
+            
+            // 컨테이너 크기에 맞춘 반응형 해상도 설정
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
+            camera = new THREE.PerspectiveCamera(75, containerWidth / containerHeight, 0.001, 1000);
             camera.position.set(cameraInitPos.x, cameraInitPos.y, cameraInitPos.z);
             camera.rotation.set(cameraInitRot.x, cameraInitRot.y, cameraInitRot.z);
             yaw = -10.3 * Math.PI / 180;
@@ -368,10 +443,20 @@
             roll = 0 * Math.PI / 180;
             updateCameraDirection();
             
-            const canvas = document.getElementById('landmark-canvas');
             renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
-            renderer.setClearColor(0xf8f9fa, 1);
+            
+            // 디바이스 픽셀 비율 고려하여 해상도 설정
+            const pixelRatio = Math.min(window.devicePixelRatio, 2); // 최대 2배까지만
+            renderer.setPixelRatio(pixelRatio);
+            
+            // 반응형 캔버스 크기 설정
+            canvas.width = containerWidth * pixelRatio;
+            canvas.height = containerHeight * pixelRatio;
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            
+            renderer.setSize(containerWidth, containerHeight);
+            renderer.setClearColor(0xf0f0f0, 1);
             
             const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
             scene.add(ambientLight);
@@ -463,10 +548,20 @@
                 webcamCtx = webcamOverlay.getContext('2d');
                 console.log('웹캠 오버레이 캔버스 설정 완료');
                 
+                // 고정된 웹캠 해상도 설정
+                const webcamWidth = 640;
+                const webcamHeight = 480;
+                
                 // 비디오 크기 설정
-                console.log('비디오 크기 설정:', webcamVideo.videoWidth, 'x', webcamVideo.videoHeight);
-                webcamOverlay.width = webcamVideo.videoWidth;
-                webcamOverlay.height = webcamVideo.videoHeight;
+                console.log('비디오 크기 설정:', webcamWidth, 'x', webcamHeight);
+                webcamOverlay.width = webcamWidth;
+                webcamOverlay.height = webcamHeight;
+                webcamOverlay.style.width = webcamWidth + 'px';
+                webcamOverlay.style.height = webcamHeight + 'px';
+                
+                // 비디오 요소 크기 조정
+                webcamVideo.style.width = webcamWidth + 'px';
+                webcamVideo.style.height = webcamHeight + 'px';
                 
                 document.getElementById('webcam-status').textContent = '손 감지 활성화';
                 console.log('MediaPipe Hands 초기화 완료');
@@ -1085,9 +1180,23 @@
         // 윈도우 리사이즈 처리
         window.addEventListener('resize', () => {
             const canvas = document.getElementById('landmark-canvas');
-            camera.aspect = canvas.offsetWidth / canvas.offsetHeight;
+            const container = canvas.parentElement;
+            
+            // 컨테이너 크기에 맞춘 반응형 설정
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            const pixelRatio = Math.min(window.devicePixelRatio, 2);
+            
+            // 캔버스 크기 재설정
+            canvas.width = containerWidth * pixelRatio;
+            canvas.height = containerHeight * pixelRatio;
+            canvas.style.width = '100%';
+            canvas.style.height = '100%';
+            
+            // 카메라 및 렌더러 업데이트
+            camera.aspect = containerWidth / containerHeight;
             camera.updateProjectionMatrix();
-            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
+            renderer.setSize(containerWidth, containerHeight);
         });
     </script>
 </body>

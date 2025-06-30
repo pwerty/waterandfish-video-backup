@@ -1,0 +1,165 @@
+* { 
+  margin: 0; 
+  padding: 0; 
+  box-sizing: border-box; 
+}
+
+.prototype-viewer {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  height: 100vh;
+  overflow: hidden;
+  /* 고정된 최소 해상도 설정 */
+  min-width: 1200px;
+  min-height: 800px;
+}
+
+.main-container {
+  display: flex;
+  height: calc(100vh - 80px);
+  /* 고정된 최소 높이 설정 */
+  min-height: 720px;
+}
+
+.left-panel, .right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  /* 고정된 최소 너비 설정 */
+  min-width: 600px;
+}
+
+.left-panel {
+  background: rgba(255, 255, 255, 0.95);
+  border-right: 2px solid rgba(0, 0, 0, 0.1);
+}
+
+.right-panel {
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.panel-title {
+  background: rgba(52, 73, 94, 0.9);
+  color: white;
+  padding: 10px 20px;
+  font-size: 16px;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  /* 고정 높이 설정 */
+  height: 50px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.canvas-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #f8f9fa;
+  /* 고정된 최소 높이 설정 */
+  min-height: 670px;
+  /* 캔버스를 중앙에 배치하기 위한 설정 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#landmark-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* 캔버스 해상도 고정 */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  /* 캔버스를 중앙에 배치 */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.webcam-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  position: relative;
+  /* 고정된 최소 높이 설정 */
+  min-height: 670px;
+}
+
+#webcam-video {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  /* 비디오 해상도 고정 */
+  object-fit: contain;
+}
+
+#webcam-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  border-radius: 8px;
+}
+
+.webcam-overlay {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #2c3e50;
+  padding: 10px 15px;
+  border-radius: 6px;
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.status-indicator {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #e74c3c;
+}
+
+.status-indicator.active {
+  background: #27ae60;
+  box-shadow: 0 0 10px #27ae60;
+}
+
+/* 반응형 디자인을 위한 미디어 쿼리 */
+@media (max-width: 1400px) {
+  .prototype-viewer {
+    min-width: 1000px;
+  }
+  .left-panel, .right-panel {
+    min-width: 500px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .prototype-viewer {
+    min-width: 800px;
+  }
+  .left-panel, .right-panel {
+    min-width: 400px;
+  }
+}
+
+/* 고해상도 디스플레이를 위한 설정 */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  #landmark-canvas {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+} 
