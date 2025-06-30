@@ -1,4 +1,5 @@
 .DS_Store
+./landmark_env
 # video files
 *.avi
 *.mp4

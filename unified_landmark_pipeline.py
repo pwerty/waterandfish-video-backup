@@ -9,6 +9,7 @@ import glob
 from datetime import datetime
 import sys
 import argparse
+from scipy.signal import savgol_filter
 
 # 설정
 RESULT_DIR = 'result'
@@ -100,6 +101,11 @@ def extract_landmarks_from_video(video_path):
         'right_hand': np.stack(right_hand_list) if right_hand_list else np.zeros((0,21,3)),
     }
     
+    # 랜드마크 후처리 적용
+    print(f"🔧 랜드마크 후처리 시작...")
+    landmarks = postprocess_landmarks(landmarks)
+    print(f"✅ 랜드마크 후처리 완료")
+    
     print(f"✅ 랜드마크 추출 완료:")
     print(f"   - pose: {len(landmarks['pose'])}프레임")
     print(f"   - left_hand: {len(landmarks['left_hand'])}프레임")
@@ -115,62 +121,16 @@ def ensure_result_directory():
     else:
         print(f"📁 결과 디렉토리 확인: {RESULT_DIR}")
 
-def save_to_npz(landmarks, video_path):
-    """랜드마크를 NPZ 파일로 저장"""
-    print_step(1, "NPZ 파일 저장")
-    
-    # 결과 디렉토리 확인
+def save_landmarks_to_json(landmarks, video_path, suffix=''):
+    """랜드마크를 JSON 파일로 저장 (suffix로 파일명 구분)"""
     ensure_result_directory()
-    
-    # 출력 파일명 생성
     base_name = os.path.splitext(os.path.basename(video_path))[0]
-    npz_filename = os.path.join(RESULT_DIR, f"{base_name}_landmarks.npz")
-    
-    print(f"💾 NPZ 파일 저장 중: {npz_filename}")
-    np.savez_compressed(npz_filename, **landmarks)
-    print(f"✅ NPZ 파일 저장 완료: {npz_filename}")
-    
-    return npz_filename
-
-def convert_npz_to_json(npz_filename):
-    """NPZ 파일을 JSON으로 변환"""
-    print_step(2, "JSON 변환")
-    
-    print(f"🔄 NPZ 파일 로드 중: {npz_filename}")
-    npz_data = np.load(npz_filename)
-    
-    json_data = {}
-    for key in npz_data.keys():
-        json_data[key] = npz_data[key].tolist()
-    
-    # JSON 파일명 생성 (result 디렉토리에 저장)
-    base_name = os.path.splitext(os.path.basename(npz_filename))[0]
-    json_filename = os.path.join(RESULT_DIR, f"{base_name}.json")
-    
-    print(f"💾 JSON 파일 저장 중: {json_filename}")
+    json_filename = os.path.join(RESULT_DIR, f"{base_name}{suffix}.json")
+    json_data = {k: v.tolist() for k, v in landmarks.items()}
     with open(json_filename, 'w', encoding='utf-8') as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
-    
-    print(f"✅ JSON 파일 저장 완료: {json_filename}")
-    
-    # 파일 크기 정보 출력
-    file_size = os.path.getsize(json_filename) / (1024 * 1024)  # MB
-    print(f"📊 JSON 파일 크기: {file_size:.2f} MB")
-    
+    print(f"💾 JSON 파일 저장 완료: {json_filename}")
     return json_filename
-
-def cleanup_npz_file(npz_filename):
-    """NPZ 파일 정리"""
-    print_step(3, "중간 파일 정리")
-    
-    if os.path.exists(npz_filename):
-        try:
-            os.remove(npz_filename)
-            print(f"🗑️  {npz_filename} 제거됨")
-        except Exception as e:
-            print(f"⚠️  {npz_filename} 제거 실패: {e}")
-    else:
-        print("정리할 NPZ 파일이 없습니다.")
 
 def show_results(json_filename):
     """결과 파일 확인"""
@@ -195,6 +155,83 @@ def show_results(json_filename):
             print(f"⚠️  결과 파일 분석 중 오류: {e}")
     else:
         print("❌ JSON 파일이 생성되지 않았습니다.")
+
+def postprocess_landmarks(all_landmarks,
+                          max_gap=5,          # 보간 허용 프레임 길이
+                          ma_win=3,           # 이동평균 윈도우
+                          sg_win=7, sg_poly=2 # Savitzky–Golay 파라미터
+                          ):
+    """
+    누락(NaN/0) 보간  ▸  중앙값 이상치 제거  ▸  Savitzky–Golay 스무딩
+    """
+    def is_missing(pt):
+        return (pt == 0).all() or np.isnan(pt).any()
+
+    def linear_interp(seq):
+        """seq: (T, D) 배열, 누락(0 또는 NaN)을 선형보간으로 채움"""
+        seq = seq.copy()
+        T = seq.shape[0]
+        valid = ~np.apply_along_axis(is_missing, 1, seq)
+        idx = np.arange(T)
+
+        # 누락 전부면 생략
+        if not valid.any(): 
+            return seq
+
+        # 앞뒤 valid 인덱스 추출
+        valid_idx = idx[valid]
+        for d in range(seq.shape[1]):
+            seq[:, d] = np.interp(idx, valid_idx, seq[valid, d])
+        return seq
+
+    processed_landmarks = {}
+    
+    for key, landmarks in all_landmarks.items():
+        if landmarks is None or len(landmarks) == 0:
+            processed_landmarks[key] = landmarks
+            continue
+            
+        # (T, N, 3) 형태로 변환
+        if len(landmarks.shape) == 2:
+            landmarks = landmarks.reshape(1, -1, 3)
+        
+        T, N, D = landmarks.shape
+        processed = np.zeros_like(landmarks)
+        
+        # 각 랜드마크 포인트별로 처리
+        for n in range(N):
+            seq = landmarks[:, n, :]  # (T, 3)
+            
+            # 1. 선형 보간
+            seq = linear_interp(seq)
+            
+            # 2. 중앙값 이상치 제거 (이동평균 윈도우 사용)
+            if ma_win > 1 and T > ma_win:
+                for d in range(D):
+                    # 이동평균 계산
+                    ma = np.convolve(seq[:, d], np.ones(ma_win)/ma_win, mode='same')
+                    # 중앙값과의 차이 계산
+                    diff = np.abs(seq[:, d] - ma)
+                    # 이상치 임계값 (표준편차의 2배)
+                    threshold = 2 * np.std(diff)
+                    # 이상치를 이동평균으로 대체
+                    outliers = diff > threshold
+                    seq[outliers, d] = ma[outliers]
+            
+            # 3. Savitzky-Golay 스무딩
+            if sg_win > 1 and T > sg_win:
+                for d in range(D):
+                    try:
+                        seq[:, d] = savgol_filter(seq[:, d], sg_win, sg_poly)
+                    except:
+                        # 스무딩 실패 시 원본 유지
+                        pass
+            
+            processed[:, n, :] = seq
+        
+        processed_landmarks[key] = processed
+    
+    return processed_landmarks
 
 def main():
     """메인 파이프라인 실행"""
@@ -240,27 +277,23 @@ def main():
         # Step 2: 랜드마크 추출
         landmarks = extract_landmarks_from_video(args.video_path)
         
-        # Step 3: NPZ 파일 저장
-        npz_filename = save_to_npz(landmarks, args.video_path)
+        # Step 3-1: 원본(raw) 저장
+        raw_json_filename = save_landmarks_to_json(landmarks, args.video_path, suffix='_raw')
         
-        # Step 4: JSON 변환
-        json_filename = convert_npz_to_json(npz_filename)
+        # Step 3-2: 후보정(postprocess) 적용 및 저장
+        post_landmarks = postprocess_landmarks(landmarks)
+        converted_json_filename = save_landmarks_to_json(post_landmarks, args.video_path, suffix='_converted')
         
-        # Step 5: 중간 파일 정리 (옵션)
-        if not args.keep_npz:
-            cleanup_npz_file(npz_filename)
-        else:
-            print(f"💾 NPZ 파일 유지: {npz_filename}")
-        
-        # Step 6: 결과 확인
-        show_results(json_filename)
+        # Step 4: 결과 확인 (원본/후보정 모두)
+        show_results(raw_json_filename)
+        show_results(converted_json_filename)
         
         # 완료 메시지
         total_time = time.time() - start_time
         print_header("파이프라인 완료")
         print(f"✅ 모든 작업이 성공적으로 완료되었습니다!")
         print(f"⏱️  총 소요시간: {total_time:.2f}초")
-        print(f"🎯 결과 파일: {json_filename}")
+        print(f"🎯 결과 파일: {raw_json_filename}")
         print(f"📁 결과 디렉토리: {os.path.abspath(RESULT_DIR)}")
         
     except KeyboardInterrupt:
