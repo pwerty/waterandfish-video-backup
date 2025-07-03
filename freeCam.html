@@ -288,11 +288,17 @@
         
         <!-- 우측 패널: 웹캠 + 컨트롤 -->
         <div class="right-panel">
-                        <div class="panel-title">3D 랜드마크 뷰어</div>
-            <div class="canvas-container">
-                <canvas id="landmark-canvas"></canvas>
+            <div class="panel-title">실시간 웹캠</div>
+            
+            <div class="webcam-container">
+                <video id="webcam-video" autoplay muted playsinline></video>
+                <canvas id="webcam-overlay" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
+                <div class="webcam-overlay">
+                    <div>웹캠 스트림</div>
+                    <div id="webcam-status">연결 중...</div>
+                </div>
+                <div class="status-indicator" id="webcam-indicator"></div>
             </div>
-
         </div>
     </div>
 
@@ -702,16 +708,16 @@
         
         // 이벤트 리스너 설정
         function setupEventListeners() {
-            // 키보드 컨트롤 (시점 이동 비활성화)
-            // document.addEventListener('keydown', handleKeyDown);
+            // 키보드 컨트롤 (시점 이동 활성화)
+            document.addEventListener('keydown', handleKeyDown);
             
-            // 마우스 컨트롤 (시점 이동 비활성화)
-            // const canvas = document.getElementById('landmark-canvas');
-            // canvas.addEventListener('mousedown', handleMouseDown);
-            // canvas.addEventListener('mousemove', handleMouseMove);
-            // canvas.addEventListener('mouseup', handleMouseUp);
-            // canvas.addEventListener('mouseleave', handleMouseUp);
-            // canvas.addEventListener('wheel', handleWheel);
+            // 마우스 컨트롤 (시점 이동 활성화)
+            const canvas = document.getElementById('landmark-canvas');
+            canvas.addEventListener('mousedown', handleMouseDown);
+            canvas.addEventListener('mousemove', handleMouseMove);
+            canvas.addEventListener('mouseup', handleMouseUp);
+            canvas.addEventListener('mouseleave', handleMouseUp);
+            canvas.addEventListener('wheel', handleWheel);
             
             // 체크박스 이벤트 (구 옵션과 몸 옵션 제거)
             document.getElementById('show-cylinders').addEventListener('change', () => loadFrame(currentFrame));

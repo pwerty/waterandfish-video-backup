@@ -287,13 +287,7 @@
         </div>
         
         <!-- 우측 패널: 웹캠 + 컨트롤 -->
-        <div class="right-panel">
-                        <div class="panel-title">3D 랜드마크 뷰어</div>
-            <div class="canvas-container">
-                <canvas id="landmark-canvas"></canvas>
-            </div>
-
-        </div>
+        
     </div>
 
     <script>
@@ -635,7 +629,7 @@
                     
                     // 각 파일을 로드
                     const loadPromises = jsonFiles.map(filename => 
-                        fetch(`result/${filename}`)
+                        fetch(`dtw_data/${filename}`)
                             .then(response => {
                                 if (!response.ok) {
                                     throw new Error(`HTTP ${response.status}`);

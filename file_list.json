@@ -1,0 +1,34 @@
+{
+  "landmark_files": [
+    "KETI_SL_0000000338_raw_landmarks_converted.json",
+    "KETI_SL_0000001172_raw_landmarks_converted.json",
+    "KETI_SL_0000001940_raw_landmarks_converted.json",
+    "KETI_SL_0000002852_raw_landmarks_converted.json",
+    "KETI_SL_0000003680_raw_landmarks_converted.json",
+    "KETI_SL_0000000338_raw_landmarks.json",
+    "KETI_SL_0000001172_raw_landmarks.json",
+    "KETI_SL_0000001940_raw_landmarks.json",
+    "KETI_SL_0000002852_raw_landmarks.json",
+    "KETI_SL_0000003680_raw_landmarks.json",
+    "KETI_SL_0000000338_converted_landmarks_converted.json",
+    "KETI_SL_0000001172_converted_landmarks_converted.json",
+    "KETI_SL_0000001940_converted_landmarks_converted.json",
+    "KETI_SL_0000002852_converted_landmarks_converted.json",
+    "KETI_SL_0000003680_converted_landmarks_converted.json",
+    "KETI_SL_0000000338_converted_landmarks.json",
+    "KETI_SL_0000001172_converted_landmarks.json",
+    "KETI_SL_0000001940_converted_landmarks.json",
+    "KETI_SL_0000002852_converted_landmarks.json",
+    "KETI_SL_0000003680_converted_landmarks.json",
+    "KETI_SL_0000000380_converted_landmarks.json",
+    "KETI_SL_0000000380_raw_landmarks.json",
+    "KETI_SL_0000000256_raw_landmarks.json",
+    "KETI_SL_0000000256_converted_landmarks.json",
+    "KETI_SL_0000000398_raw_landmarks.json",
+    "KETI_SL_0000000398_converted_landmarks.json",
+    "KETI_SL_0000000399_raw_landmarks.json",
+    "KETI_SL_0000000399_converted_landmarks.json"
+
+
+  ]
+}
