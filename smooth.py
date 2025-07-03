@@ -257,29 +257,60 @@ def postprocess_landmarks(
         out[outliers_mask] = rolling_median[outliers_mask]
         return out
 
-    def kalman_smooth_seq(seq):
+    def kalman_smooth_seq(seq, trim_margin=5):
         """
-        (T, D) 시퀀스를 Kalman 필터로 평활화합니다.
+        (T, D) 시퀀스에서 양 끝의 불안정한 부분을 제외하고
+        핵심 구간에만 Kalman 필터를 적용하여 경계 문제를 완화합니다.
         """
-        if seq.shape[0] == 0:
+        if seq.shape[0] < trim_margin * 2: # 시퀀스가 너무 짧으면 그냥 반환
             return seq
 
-        # 각 좌표(x,y,z)를 독립적인 상태(위치, 속도)로 모델링
-        T, D = seq.shape
-        smoothed_seq = np.zeros_like(seq)
+        original_seq = seq.copy() # 원본 시퀀스 복사
+        
+        # --- [핵심 추가] 핵심 구간(Core Segment)만 잘라내기 ---
+        
+        # 실제 데이터가 있는 구간을 찾기 위해, 0이 아닌 프레임을 찾습니다.
+        # np.any(seq != 0, axis=1)는 행에 0이 아닌 값이 하나라도 있으면 True를 반환합니다.
+        valid_indices = np.where(np.any(seq != 0, axis=1))[0]
+        
+        if len(valid_indices) < trim_margin * 2: # 유효한 데이터가 너무 적으면 필터링하지 않음
+            return original_seq
+
+        first_valid = valid_indices[0]
+        last_valid = valid_indices[-1]
+
+        # 경계에서 약간의 여유(margin)를 두어 더 안정적인 구간을 선택
+        start = min(first_valid + trim_margin, len(seq) - 1)
+        end = max(last_valid - trim_margin, start + 1)
+        
+        if end <= start: # 구간이 유효하지 않으면 원본 반환
+            return original_seq
+
+        core_segment = original_seq[start:end]
+
+        # --- 코어 구간에만 Kalman 필터 적용 ---
+        T_core, D = core_segment.shape
+        smoothed_core = np.zeros_like(core_segment)
         
         for d in range(D):
-            series = seq[:, d]
+            series = core_segment[:, d]
+            # 코어 구간의 첫 번째 점으로 초기 상태 설정
             kf = KalmanFilter(
-                transition_matrices=[[1, 1], [0, 1]], # 위치, 속도 모델
+                transition_matrices=[[1, 1], [0, 1]],
                 observation_matrices=[[1, 0]],
-                initial_state_mean=[series[0], 0],
-                transition_covariance=kalman_trans_cov * np.eye(2),
-                observation_covariance=kalman_obs_cov,
+                initial_state_mean=[series[0], 0], 
+                transition_covariance=1e-4 * np.eye(2), # 여기 _covariance는 튜닝의 영역.
+                observation_covariance=1e-3
             )
             smoothed_states, _ = kf.smooth(series)
-            smoothed_seq[:, d] = smoothed_states[:, 0] # 평활화된 위치 값만 사용
-        return smoothed_seq
+            smoothed_core[:, d] = smoothed_states[:, 0]
+            
+        # --- 필터링된 코어 구간을 원본 시퀀스에 다시 삽입 ---
+        final_seq = original_seq.copy()
+        final_seq[start:end] = smoothed_core
+        
+        return final_seq
+
 
     # --- 메인 처리 로직 ---
     processed_landmarks = {}
@@ -303,15 +334,15 @@ def postprocess_landmarks(
             # 1단계: PCHIP 보간
             interp_seq = pchip_interp_seq(seq3d)
 
-            # # 2단계: Hampel 필터 (x, y, z 각각 적용)
-            # hampel_seq = np.zeros_like(interp_seq)
-            # for d in range(3):
-            #     hampel_seq[:, d] = hampel_filter_1d(interp_seq[:, d], win_size=hampel_win, n_sig=hampel_sig)
+            # 2단계: Hampel 필터 (x, y, z 각각 적용)
+            hampel_seq = np.zeros_like(interp_seq)
+            for d in range(3):
+                hampel_seq[:, d] = hampel_filter_1d(interp_seq[:, d], win_size=hampel_win, n_sig=hampel_sig)
 
-            # # 3단계: Kalman 평활화
-            # smoothed_seq = kalman_smooth_seq(hampel_seq)
+            # 3단계: Kalman 평활화
+            smoothed_seq = kalman_smooth_seq(hampel_seq)
             
-            processed[:, j, :] = interp_seq
+            processed[:, j, :] = smoothed_seq
 
         processed_landmarks[key] = processed
     
