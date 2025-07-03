@@ -1,5 +1,6 @@
 .DS_Store
-./landmark_env
+/landmark_env
+/.aws
 # video files
 *.avi
 *.mp4
