@@ -265,7 +265,7 @@
                 </div>
                 <div class="control-group">
                     <label>속도:</label>
-                    <input type="range" id="speed" min="1" max="30" value="5" onchange="updateSpeed()" style="width: 80px;">
+                    <input type="range" id="speed" min="1" max="30" value="30" onchange="updateSpeed()" style="width: 80px;">
                     <span id="speed-value">5</span>
                 </div>
                 <div class="control-toggles">
@@ -303,7 +303,7 @@
         let poseLines = [], leftHandLines = [], rightHandLines = [];
         let currentFrame = 0;
         let isPlaying = false;
-        let animationSpeed = 5;
+        let animationSpeed = 30;
         let animationInterval;
         let allData = null;
         let data = null;
@@ -353,7 +353,7 @@
         // 랜드마크 뷰어 초기화
         function initLandmarkViewer() {
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0xf8f9fa);
+            scene.background = new THREE.Color(0xdbdbdb);
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / 2 / window.innerHeight, 0.001, 1000);
             camera.position.set(cameraInitPos.x, cameraInitPos.y, cameraInitPos.z);
             camera.rotation.set(cameraInitRot.x, cameraInitRot.y, cameraInitRot.z);
@@ -1018,9 +1018,9 @@
                     // 외곽선 원기둥 (더 큰 반지름, 어두운 색상)
                     const outlineGeometry = new THREE.CylinderGeometry(0.012, 0.012, distance, 12);
                     const outlineMaterial = new THREE.MeshBasicMaterial({ 
-                        color: 0x000000, 
+                        color: 0xffffff, 
                         transparent: true, 
-                        opacity: 0.6,
+                        opacity: 0.9,
                         side: THREE.BackSide
                     });
                     const outlineCylinder = new THREE.Mesh(outlineGeometry, outlineMaterial);
@@ -1028,6 +1028,29 @@
                     outlineCylinder.quaternion.copy(cylinder.quaternion);
                     scene.add(outlineCylinder);
                     lineArray.push(outlineCylinder);
+
+
+                    // External white edges for visibility
+                    const edgeGeo = new THREE.EdgesGeometry(geometry);
+                    const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+                    const edgeLines = new THREE.LineSegments(edgeGeo, edgeMat);
+                    edgeLines.position.copy(cylinder.position);
+                    edgeLines.quaternion.copy(cylinder.quaternion);
+                    scene.add(edgeLines);
+                    lineArray.push(edgeLines);
+
+                    // White backface silhouette for enhanced visibility
+const backfaceMaterial = new THREE.MeshBasicMaterial({
+  color: 0xffffff,
+  side: THREE.BackSide,
+  depthTest: false
+});
+const backfaceOutline = new THREE.Mesh(geometry.clone(), backfaceMaterial);
+backfaceOutline.position.copy(cylinder.position);
+backfaceOutline.quaternion.copy(cylinder.quaternion);
+backfaceOutline.scale.multiplyScalar(1.15);
+scene.add(backfaceOutline);
+lineArray.push(backfaceOutline);
                 }
             });
         }

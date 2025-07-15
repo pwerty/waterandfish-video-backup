@@ -22,30 +22,18 @@ def main():
     # 엑셀 파일 읽기 (첫 번째 시트)
     df = pd.read_excel(EXCEL_FILE_PATH)
 
-    # A열(media_url), B열(sign_text) 순서로 순회
-    for _, row in df.iterrows():
-        media_url = row.iloc[0]
-        sign_text = row.iloc[1]
+        # Build mapping from Excel: sign_text (B-col) -> media_url base (A-col)
+    mapping = { row.iloc[1]: row.iloc[0] for _, row in df.iterrows() }
 
-        # 이미 추가된 문서가 있으면 건너뛰기
-        if collection.find_one({'sign_text': sign_text}):
-            continue
-
-        # 새 문서 생성
-        doc = {
-            'chapter_id'     : CHAPTER_ID,
-            'sign_text'      : sign_text,
-            'description'    : "",
-            'content_type'   : "word",
-            'media_url'      : media_url + ".json",
-            'model_data_url' : '',
-            'order_index'    : 1,
-            'created_at'     : CREATED_AT
-        }
-        #print(doc)
-        # 삽입
-        collection.insert_one(doc)
-
+    # Update existing lessons with null media_url
+    for doc in collection.find({ 'media_url': None }):
+        sign = doc.get('sign_text')
+        if sign in mapping:
+            new_url = f"{mapping[sign]}.json"
+            collection.update_one(
+                { '_id': doc['_id'] },
+                { '$set': { 'media_url': new_url } }
+            )
     print('모든 데이터 처리 완료.')
 
 if __name__ == '__main__':
