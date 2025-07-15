@@ -258,6 +258,7 @@
                     <button onclick="playAnimation()" id="play-btn">▶</button>
                     <button onclick="nextFrame()">▶</button>
                     <button onclick="resetCamera()">🔄</button>
+
                 </div>
                 <div class="control-group">
                     <label>프레임:</label>
@@ -313,7 +314,8 @@
         let animationInterval;
         let allData = null;
         let data = null;
-        
+        let recordIndex = 0;
+
         // 카메라 컨트롤 변수 (플라이/프리 무브)
         // 초기 카메라 설정:
         // - 위치: (-0.388, 0.334, -0.655) - 사용자 지정 위치
@@ -327,7 +329,7 @@
         let yaw = 0;
         let pitch = 0;
         let roll = 0;
-        
+
         // 색상
         const POSE_COLOR = 0x00b894;
         const LEFT_COLOR = 0x0984e3;
@@ -378,7 +380,46 @@
             renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
             renderer.setClearColor(0xf8f9fa, 1);
 
+            // --- Video Recording Setup ---
+            mediaRecorder = null;
+            recordedChunks = [];
+            const recordCanvas = renderer.domElement;
+            const recordStream = recordCanvas.captureStream(30); // 30 FPS
+            
 
+              recordedChunks = [];
+              mediaRecorder = new MediaRecorder(recordStream, { mimeType: 'video/webm; codecs=vp9' });
+              mediaRecorder.ondataavailable = e => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+              };
+              
+mediaRecorder.onstop = () => {
+  // 1) 녹화된 청크를 Blob으로 묶어 다운로드
+  const blob = new Blob(recordedChunks, { type: 'video/webm' });
+  const url  = URL.createObjectURL(blob);
+  // Use the selected file's name for download
+  const a = document.createElement('a');
+  a.href = url;
+  const select = document.getElementById('video-select');
+    let fileBase = select.value;
+  // Remove .json extension if present
+  if (fileBase.endsWith('.json')) {
+    fileBase = fileBase.slice(0, -5);
+  } 
+  a.download = `${fileBase}.webm`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // 2) 다음 애니메이션으로 자동 전환
+  select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+  select.onchange();  // loadLandmarkData → loadFrame → animate 순으로 재생 시작
+
+  // 3) 녹화 인덱스 증가
+  recordedChunks = [];  // 버퍼 초기화
+
+  // 4) 바로 녹화 재시작
+  mediaRecorder.start();
+};
             
             const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
             scene.add(ambientLight);
@@ -1133,6 +1174,9 @@
 
                 }
             });
+            if (currentFrame === data.pose.length - 1 && mediaRecorder.state === 'recording') {
+  mediaRecorder.stop();         // ← 녹화 중지 및 다운로드 트리거
+}
         }
         
         // 컨트롤 함수들
@@ -1158,6 +1202,7 @@
                 document.getElementById('play-btn').textContent = '▶ 재생';
             } else {
                 isPlaying = true;
+                mediaRecorder.start();
                 document.getElementById('play-btn').textContent = '⏸ 정지';
                 animationInterval = setInterval(() => {
                     if (data && currentFrame < data.pose.length - 1) {

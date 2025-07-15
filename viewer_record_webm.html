@@ -92,9 +92,6 @@
             background: rgba(255, 255, 255, 0.95);
             border-right: 2px solid rgba(0, 0, 0, 0.1);
         }
-        .right-panel {
-            background: rgba(255, 255, 255, 0.95);
-        }
         .panel-title {
             background: rgba(52, 73, 94, 0.9);
             color: white;
@@ -161,9 +158,7 @@
             overflow: hidden;
             background: #f8f9fa;
         }
-        #landmark-canvas, #webcam-canvas {
-            width: 100%;
-            height: 100%;
+        #landmark-canvas {
             display: block;
         }
         .webcam-container {
@@ -258,6 +253,7 @@
                     <button onclick="playAnimation()" id="play-btn">▶</button>
                     <button onclick="nextFrame()">▶</button>
                     <button onclick="resetCamera()">🔄</button>
+
                 </div>
                 <div class="control-group">
                     <label>프레임:</label>
@@ -282,24 +278,12 @@
         <div class="left-panel">
             <div class="panel-title">3D 랜드마크 뷰어</div>
             <div class="canvas-container">
-                <canvas id="landmark-canvas"></canvas>
+                <canvas id="landmark-canvas" width="959" height="873"></canvas>
             </div>
         </div>
         
         <!-- 우측 패널: 웹캠 + 컨트롤 -->
-        <div class="right-panel">
-            <div class="panel-title">실시간 웹캠</div>
-            
-            <div class="webcam-container">
-                <video id="webcam-video" autoplay muted playsinline></video>
-                <canvas id="webcam-overlay" style="position: absolute; top: 0; left: 0; pointer-events: none;"></canvas>
-                <div class="webcam-overlay">
-                    <div>웹캠 스트림</div>
-                    <div id="webcam-status">연결 중...</div>
-                </div>
-                <div class="status-indicator" id="webcam-indicator"></div>
-            </div>
-        </div>
+
     </div>
 
     <script>
@@ -313,7 +297,8 @@
         let animationInterval;
         let allData = null;
         let data = null;
-        
+        let recordIndex = 0;
+
         // 카메라 컨트롤 변수 (플라이/프리 무브)
         // 초기 카메라 설정:
         // - 위치: (-0.388, 0.334, -0.655) - 사용자 지정 위치
@@ -327,7 +312,8 @@
         let yaw = 0;
         let pitch = 0;
         let roll = 0;
-        
+        mediaRecorder = null;
+
         // 색상
         const POSE_COLOR = 0x00b894;
         const LEFT_COLOR = 0x0984e3;
@@ -350,11 +336,8 @@
         let webcamStream = null;
         let webcamVideo = null;
         
-        // 초기화
-        window.onload = function() {
+
             initLandmarkViewer();
-            initWebcam();
-        };
         
         // 랜드마크 뷰어 초기화
         function initLandmarkViewer() {
@@ -375,10 +358,51 @@
             
             const canvas = document.getElementById('landmark-canvas');
             renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-            renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
+            renderer.setSize(959, 873);
             renderer.setClearColor(0xf8f9fa, 1);
 
+            // --- Video Recording Setup ---
+            
+            recordedChunks = [];
+            const recordCanvas = renderer.domElement;
+            const recordStream = recordCanvas.captureStream(30); // 30 FPS
+            
 
+              recordedChunks = [];
+              mediaRecorder = new MediaRecorder(recordStream, { mimeType: 'video/webm; codecs=vp9' });
+
+              window.dispatchEvent(new CustomEvent('recorderReady'));
+              mediaRecorder.ondataavailable = e => {
+                if (e.data.size > 0) recordedChunks.push(e.data);
+              };
+              
+mediaRecorder.onstop = () => {
+  // 1) 녹화된 청크를 Blob으로 묶어 다운로드
+  const blob = new Blob(recordedChunks, { type: 'video/webm' });
+  const url  = URL.createObjectURL(blob);
+  // Use the selected file's name for download
+  const a = document.createElement('a');
+  a.href = url;
+  const select = document.getElementById('video-select');
+    let fileBase = select.value;
+  // Remove .json extension if present
+  if (fileBase.endsWith('.json')) {
+    fileBase = fileBase.slice(0, -5);
+  } 
+  a.download = `${fileBase}.webm`;
+  a.click();
+  URL.revokeObjectURL(url);
+
+  // 2) 다음 애니메이션으로 자동 전환
+  select.selectedIndex = (select.selectedIndex + 1) % select.options.length;
+  select.onchange();  // loadLandmarkData → loadFrame → animate 순으로 재생 시작
+
+  // 3) 녹화 인덱스 증가
+  recordedChunks = [];  // 버퍼 초기화
+
+  // 4) 바로 녹화 재시작
+  mediaRecorder.start();
+};
             
             const ambientLight = new THREE.AmbientLight(0x404040, 0.8);
             scene.add(ambientLight);
@@ -403,238 +427,22 @@
             
             // 초기 카메라 상태 로그
             logCameraState('초기화');
+playAnimation();
         }
-        
-        // 웹캠 초기화
-        async function initWebcam() {
-            try {
-                console.log('웹캠 초기화 시작...');
-                webcamVideo = document.getElementById('webcam-video');
-                webcamStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    }, 
-                    audio: false 
-                });
-                webcamVideo.srcObject = webcamStream;
-                
-                // 비디오 로드 완료 대기
-                await new Promise((resolve) => {
-                    webcamVideo.onloadedmetadata = () => {
-                        console.log('웹캠 비디오 로드 완료:', webcamVideo.videoWidth, 'x', webcamVideo.videoHeight);
-                        resolve();
-                    };
-                });
-                
-                webcamVideo.play();
-                console.log('웹캠 재생 시작');
-                
-                document.getElementById('webcam-status').textContent = '연결됨';
-                document.getElementById('webcam-indicator').classList.add('active');
-                
-                // MediaPipe Tasks Vision 초기화
-                await initMediaPipeHands();
-            } catch (error) {
-                console.error('웹캠 접근 실패:', error);
-                document.getElementById('webcam-status').textContent = '접근 실패';
-                document.getElementById('webcam-video').style.display = 'none';
-            }
-        }
-        
-        // MediaPipe Tasks Vision 초기화
-        let handLandmarker = null;
-        let webcamOverlay = null;
-        let webcamCtx = null;
-        
-        async function initMediaPipeHands() {
-            try {
-                console.log('MediaPipe Tasks Vision 모듈 로드 시작...');
-                // MediaPipe Tasks Vision 모듈 로드
-                const { HandLandmarker, FilesetResolver } = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0");
-                console.log('MediaPipe 모듈 로드 완료');
-                
-                console.log('FilesetResolver 초기화...');
-                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
-                console.log('FilesetResolver 초기화 완료');
-                
-                console.log('HandLandmarker 생성 시작...');
-                handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO",
-                    numHands: 2
-                });
-                console.log('HandLandmarker 생성 완료');
-                
-                // 웹캠 오버레이 캔버스 설정
-                webcamOverlay = document.getElementById('webcam-overlay');
-                webcamCtx = webcamOverlay.getContext('2d');
-                console.log('웹캠 오버레이 캔버스 설정 완료');
-                
-                // 비디오 크기 설정
-                console.log('비디오 크기 설정:', webcamVideo.videoWidth, 'x', webcamVideo.videoHeight);
-                webcamOverlay.width = webcamVideo.videoWidth;
-                webcamOverlay.height = webcamVideo.videoHeight;
-                
-                document.getElementById('webcam-status').textContent = '손 감지 활성화';
-                console.log('MediaPipe Hands 초기화 완료');
-                
-                // 즉시 손 감지 시작
-                console.log('손 감지 즉시 시작...');
-                setTimeout(() => {
-                    startHandDetection();
-                }, 100);
-                
-            } catch (error) {
-                console.error('MediaPipe Hands 초기화 실패:', error);
-                document.getElementById('webcam-status').textContent = '손 감지 초기화 실패';
-            }
-        }
-        
-        function startHandDetection() {
-            console.log('=== 손 감지 시작 함수 호출 ===');
-            console.log('handLandmarker 존재:', !!handLandmarker);
-            console.log('webcamVideo 존재:', !!webcamVideo);
-            console.log('webcamVideo readyState:', webcamVideo ? webcamVideo.readyState : 'N/A');
-            console.log('webcamVideo videoWidth:', webcamVideo ? webcamVideo.videoWidth : 'N/A');
-            console.log('webcamVideo videoHeight:', webcamVideo ? webcamVideo.videoHeight : 'N/A');
-            console.log('webcamOverlay 존재:', !!webcamOverlay);
-            console.log('webcamCtx 존재:', !!webcamCtx);
-            
-            // 조건 확인
-            const hasHandLandmarker = !!handLandmarker;
-            const hasVideo = !!webcamVideo;
-            const videoReady = hasVideo && webcamVideo.readyState >= 2;
-            const hasOverlay = !!webcamOverlay && !!webcamCtx;
-            
-            console.log('조건 확인:', {
-                hasHandLandmarker,
-                hasVideo,
-                videoReady,
-                hasOverlay
-            });
-            
-            if (hasHandLandmarker && hasVideo && hasOverlay) {
-                console.log('모든 조건 충족! 손 감지 루프 시작');
-                detectHands();
-            } else {
-                console.log('조건 불충족, 1초 후 재시도...');
-                // 조건이 충족되지 않으면 1초 후 다시 시도
-                setTimeout(startHandDetection, 1000);
-            }
-        }
-        
-        async function detectHands() {
-            try {
-                console.log('손 감지 실행 중... (프레임:', Date.now(), ')');
-                
-                // 비디오가 준비되지 않았으면 대기
-                if (webcamVideo.readyState < 2) {
-                    console.log('비디오가 아직 준비되지 않음, 다음 프레임에서 재시도');
-                    requestAnimationFrame(detectHands);
-                    return;
-                }
-                
-                const results = await handLandmarker.detectForVideo(webcamVideo, performance.now());
-                console.log('손 감지 결과:', results);
-                
-                // 오버레이 캔버스 클리어
-                webcamCtx.clearRect(0, 0, webcamOverlay.width, webcamOverlay.height);
-                
-                // 손 랜드마크 그리기
-                if (results && results.landmarks && results.landmarks.length > 0) {
-                    console.log('감지된 손 개수:', results.landmarks.length);
-                    console.log('손 구분 정보:', results.handedness);
-                    
-                    results.landmarks.forEach((landmarks, handIndex) => {
-                        // handedness 정보를 사용하여 실제 왼손/오른손 구분
-                        const handedness = results.handedness && results.handedness[handIndex] ? results.handedness[handIndex][0] : null;
-                        let color, handType;
-                        
-                        if (handedness) {
-                            if (handedness.categoryName === 'Left') {
-                                color = '#00FF00'; // 왼손: 초록색
-                                handType = '왼손';
-                            } else if (handedness.categoryName === 'Right') {
-                                color = '#FF0000'; // 오른손: 빨간색
-                                handType = '오른손';
-                            } else {
-                                color = '#FFFF00'; // 알 수 없음: 노란색
-                                handType = '알 수 없음';
-                            }
-                        } else {
-                            // handedness 정보가 없으면 기존 방식 사용
-                            color = handIndex === 0 ? '#00FF00' : '#FF0000';
-                            handType = handIndex === 0 ? '첫 번째 손' : '두 번째 손';
-                        }
-                        
-                        console.log(`손 ${handIndex + 1}: ${handType} (${color})`);
-                        drawHandLandmarks(landmarks, color);
-                    });
-                } else {
-                    console.log('감지된 손이 없습니다');
-                }
-                
-                // 다음 프레임 처리
-                requestAnimationFrame(detectHands);
-            } catch (error) {
-                console.error('손 감지 오류:', error);
-                // 오류 발생 시에도 계속 시도
-                setTimeout(() => {
-                    requestAnimationFrame(detectHands);
-                }, 100);
-            }
-        }
-        
-        function drawHandLandmarks(landmarks, color) {
-            // 손 연결선 정의
-            const HAND_CONNECTIONS = [
-                [0,1],[1,2],[2,3],[3,4],
-                [0,5],[5,6],[6,7],[7,8],
-                [0,9],[9,10],[10,11],[11,12],
-                [0,13],[13,14],[14,15],[15,16],
-                [0,17],[17,18],[18,19],[19,20],
-                [5,9],[9,13],[13,17],[5,17]
-            ];
-            
-            // 연결선 그리기
-            HAND_CONNECTIONS.forEach(([start, end]) => {
-                const startPoint = landmarks[start];
-                const endPoint = landmarks[end];
-                
-                if (startPoint && endPoint) {
-                    const startX = startPoint.x * webcamOverlay.width;
-                    const startY = startPoint.y * webcamOverlay.height;
-                    const endX = endPoint.x * webcamOverlay.width;
-                    const endY = endPoint.y * webcamOverlay.height;
-                    
-                    webcamCtx.strokeStyle = color;
-                    webcamCtx.lineWidth = 2;
-                    webcamCtx.beginPath();
-                    webcamCtx.moveTo(startX, startY);
-                    webcamCtx.lineTo(endX, endY);
-                    webcamCtx.stroke();
-                }
-            });
-            
-            // 랜드마크 점 그리기
-            landmarks.forEach(landmark => {
-                const x = landmark.x * webcamOverlay.width;
-                const y = landmark.y * webcamOverlay.height;
-                
-                webcamCtx.fillStyle = color;
-                webcamCtx.beginPath();
-                webcamCtx.arc(x, y, 3, 0, 2 * Math.PI);
-                webcamCtx.fill();
-            });
-        }
+     
+    
         
         // 랜드마크 데이터 로드
         function loadLandmarkData() {
             // file_list.json에서 파일 목록 로드
+                        // 단일 파일 모드 지원: URL 파라미터 'file'이 있으면 해당 JSON만 로드
+            const urlParams = new URLSearchParams(window.location.search);
+            const singleFile = urlParams.get('file');
+            if (singleFile) {
+                loadSingleJson(singleFile);
+                return;
+            }
+
             fetch('file_list.json')
                 .then(response => {
                     if (!response.ok) {
@@ -717,6 +525,48 @@
                 });
         }
         
+
+        /**
+         * 단일 JSON 파일만 로드하여 뷰어를 초기화
+         */
+        function loadSingleJson(filename) {
+            fetch(`${filename}`)
+              .then(response => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return response.json();
+              })
+              .then(json => {
+                // 데이터 세팅
+                allData = {};
+                const baseName = filename.replace('.json','');
+                allData[baseName] = json;
+                // 셀렉트 박스 초기화
+                const select = document.getElementById('video-select');
+                select.innerHTML = '';
+                const opt = document.createElement('option');
+                opt.value = baseName;
+                opt.textContent = baseName;
+                select.appendChild(opt);
+                // 슬라이더 및 첫 프레임 로드
+                document.getElementById('frame-slider').max = json.pose.length - 1;
+                select.value = baseName;
+                select.onchange = function() {
+                  data = allData[select.value];
+                  document.getElementById('frame-slider').max = data.pose.length - 1;
+                  loadFrame(0);
+                };
+                select.onchange();
+              })
+              .catch(error => {
+                console.error('단일 JSON 로드 실패:', error);
+                document.querySelector('.left-panel').innerHTML = `
+                  <div style="color: white; padding: 20px; text-align: center;">
+                    <h3>단일 파일 로드 실패</h3>
+                    <p>${error.message}</p>
+                  </div>`;
+              });
+        }
+
         // 이벤트 리스너 설정
         function setupEventListeners() {
             // 키보드 컨트롤 (시점 이동 활성화)
@@ -1133,6 +983,9 @@
 
                 }
             });
+            if (currentFrame === data.pose.length - 1 && mediaRecorder.state === 'recording') {
+  mediaRecorder.stop();         // ← 녹화 중지 및 다운로드 트리거
+}
         }
         
         // 컨트롤 함수들
@@ -1158,6 +1011,7 @@
                 document.getElementById('play-btn').textContent = '▶ 재생';
             } else {
                 isPlaying = true;
+                mediaRecorder.start();
                 document.getElementById('play-btn').textContent = '⏸ 정지';
                 animationInterval = setInterval(() => {
                     if (data && currentFrame < data.pose.length - 1) {
