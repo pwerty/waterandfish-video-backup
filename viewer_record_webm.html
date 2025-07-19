@@ -389,7 +389,7 @@ mediaRecorder.onstop = () => {
   if (fileBase.endsWith('.json')) {
     fileBase = fileBase.slice(0, -5);
   } 
-  a.download = `${fileBase}.webm`;
+  a.download = `recording_${fileBase}.webm`;
   a.click();
   URL.revokeObjectURL(url);
 

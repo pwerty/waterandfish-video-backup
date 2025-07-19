@@ -322,6 +322,11 @@
         // - Yaw: -10.3도 (좌우 회전) - 사용자 지정 각도
         // - Pitch: 178.7도 (상하 회전) - 사용자 지정 각도
         // - Roll: 0도 (시점 회전) - 사용자 지정 각도
+
+        // 7월 17일 수정 전 값 : let cameraInitPos = { x: 0.453, y: 0.489, z: 0.592 };
+            // yaw = -186.2 * Math.PI / 180;
+            // pitch = 192.5 * Math.PI / 180;
+            // roll = 0 * Math.PI / 180;
         let cameraInitPos = { x: 0.453, y: 0.489, z: 0.592 };
         let cameraInitRot = { x: 0, y: 0, z: 0 };
         let isMouseDown = false;
@@ -332,8 +337,8 @@
 
         // 색상
         const POSE_COLOR = 0x00b894;
-        const LEFT_COLOR = 0x0984e3;
-        const RIGHT_COLOR = 0xd63031;
+        const LEFT_COLOR = 0xF4A258;
+        const RIGHT_COLOR = 0x5fa5fb;
         
         // 연결 구조
         const POSE_CONNECTIONS = [
@@ -355,7 +360,7 @@
         // 초기화
         window.onload = function() {
             initLandmarkViewer();
-            initWebcam();
+            //initWebcam();
         };
         
         // 랜드마크 뷰어 초기화
@@ -366,8 +371,8 @@
             camera.position.set(cameraInitPos.x, cameraInitPos.y, cameraInitPos.z);
             camera.rotation.set(cameraInitRot.x, cameraInitRot.y, cameraInitRot.z);
 
-            yaw = -186.2 * Math.PI / 180;
-            pitch = 192.5 * Math.PI / 180;
+            yaw = -189.0 * Math.PI / 180;
+            pitch =  178.2 * Math.PI / 180;
             roll = 0 * Math.PI / 180;
             // yaw = -10.3 * Math.PI / 180;
             // pitch = 178.7 * Math.PI / 180;
@@ -580,7 +585,7 @@ mediaRecorder.onstop = () => {
                 }
                 
                 const results = await handLandmarker.detectForVideo(webcamVideo, performance.now());
-                console.log('손 감지 결과:', results);
+               // console.log('손 감지 결과:', results);
                 
                 // 오버레이 캔버스 클리어
                 webcamCtx.clearRect(0, 0, webcamOverlay.width, webcamOverlay.height);
