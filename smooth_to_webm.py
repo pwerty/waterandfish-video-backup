@@ -13,7 +13,9 @@ from scipy.signal import savgol_filter
 from scipy.interpolate import PchipInterpolator
 from pykalman import KalmanFilter
 import pandas as pd
-
+import subprocess
+import os
+from pathlib import Path
 # 설정
 RESULT_DIR = 'result'
 
@@ -115,6 +117,33 @@ def extract_landmarks_from_video(video_path):
     print(f"   - right_hand: {len(landmarks['right_hand'])}프레임")
     
     return landmarks
+
+
+def launch_html_recorder(json_file):
+    """HTML 뷰어를 실행하고 녹화 완료까지 대기"""
+    
+    # 로컬 서버 실행
+    server_process = subprocess.Popen([
+        'python', '-m', 'http.server', '9999'
+    ])
+    
+    time.sleep(2)  # 서버 시작 대기
+    
+    # 브라우저에서 HTML 열기
+    url = f"http://localhost:9999/viewer_record_webm.html?file={json_file}"
+    subprocess.run(['open', url])  # macOS용
+    
+    # 녹화 완료 대기 (WebM 파일 생성 확인)
+    output_file = f"recording_{Path(json_file).stem}.webm"
+    
+    print("녹화 완료 대기 중...")
+    while not os.path.exists(output_file):
+        time.sleep(1)
+    
+    print(f"✅ 녹화 완료: {output_file}")
+    server_process.terminate()
+    
+    return output_file
 
 def ensure_result_directory():
     """결과 디렉토리 생성"""
@@ -401,6 +430,13 @@ def main():
         
         # Step 4: 결과 확인 (원본/후보정 모두)
         show_results(converted_json_filename)
+
+         # HTML 녹화 실행
+        webm_file = launch_html_recorder(converted_json_filename)
+            
+        print(f"✅ 최종 결과:")
+        print(f"  - JSON: {converted_json_filename}")
+        print(f"  - WebM: {webm_file}")
         
         # 완료 메시지
         total_time = time.time() - start_time
@@ -418,3 +454,5 @@ def main():
 
 if __name__ == "__main__":
     main() 
+
+    
