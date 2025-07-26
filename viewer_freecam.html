@@ -246,6 +246,22 @@
             </div>
             <div class="header-controls">
                 <div class="control-group">
+    <label>포즈 X:</label>
+    <input type="number" id="pose-x" value="0" step="0.001" style="width: 60px;" oninput="updatePoseOffset('x', this.value)">
+</div>
+<div class="control-group">
+    <label>포즈 Y:</label>
+    <input type="number" id="pose-y" value="0" step="0.001" style="width: 60px;" oninput="updatePoseOffset('y', this.value)">
+</div>
+<div class="control-group">
+    <label>포즈 Z:</label>
+    <input type="number" id="pose-z" value="-0.3" step="0.001" style="width: 60px;" oninput="updatePoseOffset('z', this.value)">
+</div>
+<div class="control-group">
+    <label>포즈 크기:</label>
+    <input type="number" id="pose-scale" value="0.8" step="0.001" style="width: 60px;" oninput="updatePoseScale(this.value)">
+</div>
+                <div class="control-group">
                     <label>비디오:</label>
                     <select id="video-select"></select>
                 </div>
@@ -327,15 +343,23 @@
         let yaw = 0;
         let pitch = 0;
         let roll = 0;
-        
+        // 랜드마크 뷰어 관련 변수들 부분에 추가
+let poseScale = 0.8;  // 포즈 크기 조절
+let poseOffset = { x: -0.090, y: 0.098, z: -0.934 };  // 포즈 위치 조절 (-0.3 + -0.634 = -0.934)
+
+
         // 색상
         const POSE_COLOR = 0x00b894;
         const LEFT_COLOR = 0xF4A258;
         const RIGHT_COLOR = 0x5fa5fb;
         
         // 연결 구조
+        // 포즈 우측 손 [15,17],[15,19],[15,21],[17,19]
+        // 포즈 좌측 손 [16,18],[16,20],[16,22],[18,20]
+
+        // 얼굴  [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],
         const POSE_CONNECTIONS = [
-            [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],[9,10],[11,12],[11,13],[13,15],[15,17],[15,19],[15,21],[17,19],[12,14],[14,16],[16,18],[16,20],[16,22],[18,20],[11,23],[12,24],[23,24],[23,25],[24,26],[25,27],[26,28],[27,29],[28,30],[29,31],[30,32],[27,31],[28,32]
+           [9,10],[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24]
         ];
         const HAND_CONNECTIONS = [
             [0,1],[1,2],[2,3],[3,4],
@@ -352,10 +376,31 @@
         
         // 초기화
         window.onload = function() {
+            // 초기 포즈 오프셋 값 설정
+            document.getElementById('pose-x').value = poseOffset.x.toFixed(3);
+            document.getElementById('pose-y').value = poseOffset.y.toFixed(3);
+            document.getElementById('pose-z').value = poseOffset.z.toFixed(3);
+            document.getElementById('pose-scale').value = poseScale.toFixed(3);
+            
             initLandmarkViewer();
-            initWebcam();
         };
         
+        // 연결 구조 정의 아래에 추가
+// 랜드마크 회전 및 조정 함수
+function rotateLandmark(landmark, isBody = false) {
+    // 기본 회전 (x와 z 좌표 반전)
+    let result = [-landmark[0], landmark[1], -landmark[2]];
+    
+    // 포즈(신체)인 경우에만 스케일 및 오프셋 적용
+    if (isBody) {
+        result[0] = result[0] * poseScale + poseOffset.x;
+        result[1] = result[1] * poseScale + poseOffset.y;
+        result[2] = result[2] * poseScale + poseOffset.z;
+    }
+    
+    return result;
+}
+
         // 랜드마크 뷰어 초기화
         function initLandmarkViewer() {
             scene = new THREE.Scene();
@@ -404,190 +449,14 @@
             // 초기 카메라 상태 로그
             logCameraState('초기화');
         }
-        
-        // 웹캠 초기화
-        async function initWebcam() {
-            try {
-                console.log('웹캠 초기화 시작...');
-                webcamVideo = document.getElementById('webcam-video');
-                webcamStream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        width: { ideal: 640 },
-                        height: { ideal: 480 }
-                    }, 
-                    audio: false 
-                });
-                webcamVideo.srcObject = webcamStream;
-                
-                // 비디오 로드 완료 대기
-                await new Promise((resolve) => {
-                    webcamVideo.onloadedmetadata = () => {
-                        console.log('웹캠 비디오 로드 완료:', webcamVideo.videoWidth, 'x', webcamVideo.videoHeight);
-                        resolve();
-                    };
-                });
-                
-                webcamVideo.play();
-                console.log('웹캠 재생 시작');
-                
-                document.getElementById('webcam-status').textContent = '연결됨';
-                document.getElementById('webcam-indicator').classList.add('active');
-                
-                // MediaPipe Tasks Vision 초기화
-                await initMediaPipeHands();
-            } catch (error) {
-                console.error('웹캠 접근 실패:', error);
-                document.getElementById('webcam-status').textContent = '접근 실패';
-                document.getElementById('webcam-video').style.display = 'none';
-            }
-        }
+     
         
         // MediaPipe Tasks Vision 초기화
         let handLandmarker = null;
         let webcamOverlay = null;
         let webcamCtx = null;
         
-        async function initMediaPipeHands() {
-            try {
-                console.log('MediaPipe Tasks Vision 모듈 로드 시작...');
-                // MediaPipe Tasks Vision 모듈 로드
-                const { HandLandmarker, FilesetResolver } = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0");
-                console.log('MediaPipe 모듈 로드 완료');
-                
-                console.log('FilesetResolver 초기화...');
-                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm");
-                console.log('FilesetResolver 초기화 완료');
-                
-                console.log('HandLandmarker 생성 시작...');
-                handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO",
-                    numHands: 2
-                });
-                console.log('HandLandmarker 생성 완료');
-                
-                // 웹캠 오버레이 캔버스 설정
-                webcamOverlay = document.getElementById('webcam-overlay');
-                webcamCtx = webcamOverlay.getContext('2d');
-                console.log('웹캠 오버레이 캔버스 설정 완료');
-                
-                // 비디오 크기 설정
-                console.log('비디오 크기 설정:', webcamVideo.videoWidth, 'x', webcamVideo.videoHeight);
-                webcamOverlay.width = webcamVideo.videoWidth;
-                webcamOverlay.height = webcamVideo.videoHeight;
-                
-                document.getElementById('webcam-status').textContent = '손 감지 활성화';
-                console.log('MediaPipe Hands 초기화 완료');
-                
-                // 즉시 손 감지 시작
-                console.log('손 감지 즉시 시작...');
-                setTimeout(() => {
-                    startHandDetection();
-                }, 100);
-                
-            } catch (error) {
-                console.error('MediaPipe Hands 초기화 실패:', error);
-                document.getElementById('webcam-status').textContent = '손 감지 초기화 실패';
-            }
-        }
-        
-        function startHandDetection() {
-            console.log('=== 손 감지 시작 함수 호출 ===');
-            console.log('handLandmarker 존재:', !!handLandmarker);
-            console.log('webcamVideo 존재:', !!webcamVideo);
-            console.log('webcamVideo readyState:', webcamVideo ? webcamVideo.readyState : 'N/A');
-            console.log('webcamVideo videoWidth:', webcamVideo ? webcamVideo.videoWidth : 'N/A');
-            console.log('webcamVideo videoHeight:', webcamVideo ? webcamVideo.videoHeight : 'N/A');
-            console.log('webcamOverlay 존재:', !!webcamOverlay);
-            console.log('webcamCtx 존재:', !!webcamCtx);
-            
-            // 조건 확인
-            const hasHandLandmarker = !!handLandmarker;
-            const hasVideo = !!webcamVideo;
-            const videoReady = hasVideo && webcamVideo.readyState >= 2;
-            const hasOverlay = !!webcamOverlay && !!webcamCtx;
-            
-            console.log('조건 확인:', {
-                hasHandLandmarker,
-                hasVideo,
-                videoReady,
-                hasOverlay
-            });
-            
-            if (hasHandLandmarker && hasVideo && hasOverlay) {
-                console.log('모든 조건 충족! 손 감지 루프 시작');
-                detectHands();
-            } else {
-                console.log('조건 불충족, 1초 후 재시도...');
-                // 조건이 충족되지 않으면 1초 후 다시 시도
-                setTimeout(startHandDetection, 1000);
-            }
-        }
-        
-        async function detectHands() {
-            try {
-                console.log('손 감지 실행 중... (프레임:', Date.now(), ')');
-                
-                // 비디오가 준비되지 않았으면 대기
-                if (webcamVideo.readyState < 2) {
-                    console.log('비디오가 아직 준비되지 않음, 다음 프레임에서 재시도');
-                    requestAnimationFrame(detectHands);
-                    return;
-                }
-                
-                const results = await handLandmarker.detectForVideo(webcamVideo, performance.now());
-                console.log('손 감지 결과:', results);
-                
-                // 오버레이 캔버스 클리어
-                webcamCtx.clearRect(0, 0, webcamOverlay.width, webcamOverlay.height);
-                
-                // 손 랜드마크 그리기
-                if (results && results.landmarks && results.landmarks.length > 0) {
-                    console.log('감지된 손 개수:', results.landmarks.length);
-                    console.log('손 구분 정보:', results.handedness);
-                    
-                    results.landmarks.forEach((landmarks, handIndex) => {
-                        // handedness 정보를 사용하여 실제 왼손/오른손 구분
-                        const handedness = results.handedness && results.handedness[handIndex] ? results.handedness[handIndex][0] : null;
-                        let color, handType;
-                        
-                        if (handedness) {
-                            if (handedness.categoryName === 'Left') {
-                                color = '#00FF00'; // 왼손: 초록색
-                                handType = '왼손';
-                            } else if (handedness.categoryName === 'Right') {
-                                color = '#FF0000'; // 오른손: 빨간색
-                                handType = '오른손';
-                            } else {
-                                color = '#FFFF00'; // 알 수 없음: 노란색
-                                handType = '알 수 없음';
-                            }
-                        } else {
-                            // handedness 정보가 없으면 기존 방식 사용
-                            color = handIndex === 0 ? '#00FF00' : '#FF0000';
-                            handType = handIndex === 0 ? '첫 번째 손' : '두 번째 손';
-                        }
-                        
-                        console.log(`손 ${handIndex + 1}: ${handType} (${color})`);
-                        drawHandLandmarks(landmarks, color);
-                    });
-                } else {
-                    console.log('감지된 손이 없습니다');
-                }
-                
-                // 다음 프레임 처리
-                requestAnimationFrame(detectHands);
-            } catch (error) {
-                console.error('손 감지 오류:', error);
-                // 오류 발생 시에도 계속 시도
-                setTimeout(() => {
-                    requestAnimationFrame(detectHands);
-                }, 100);
-            }
-        }
+     
         
         function drawHandLandmarks(landmarks, color) {
             // 손 연결선 정의
@@ -872,14 +741,10 @@
             const showLeftHand = document.getElementById('show-left-hand').checked;
             const showRightHand = document.getElementById('show-right-hand').checked;
             
-            // 랜드마크 회전 함수 (Y축 중심 시계방향 180도)
-            function rotateLandmark(lm) {
-                return [-lm[0], lm[1], -lm[2]]; // x와 z 좌표 반전
-            }
-            
+
             // Pose
             if (data.pose && data.pose[frameIndex] && showPose) {
-                const rotatedPose = data.pose[frameIndex].map(rotateLandmark);
+                    const rotatedPose = data.pose[frameIndex].map(landmark => rotateLandmark(landmark, true));
                 if (showSpheres) {
                     rotatedPose.forEach(lm => {
                         // 메인 구
@@ -915,7 +780,7 @@
             
             // Left Hand
             if (data.left_hand && data.left_hand[frameIndex] && showLeftHand) {
-                const rotatedLeftHand = data.left_hand[frameIndex].map(rotateLandmark);
+                    const rotatedLeftHand = data.left_hand[frameIndex].map(landmark => rotateLandmark(landmark, false));
                 if (showSpheres) {
                     rotatedLeftHand.forEach(lm => {
                         // 메인 구
@@ -951,7 +816,8 @@
             
             // Right Hand
             if (data.right_hand && data.right_hand[frameIndex] && showRightHand) {
-                const rotatedRightHand = data.right_hand[frameIndex].map(rotateLandmark);
+                    const rotatedRightHand = data.right_hand[frameIndex].map(landmark => rotateLandmark(landmark, false));
+
                 if (showSpheres) {
                     rotatedRightHand.forEach(lm => {
                         // 메인 구
@@ -1198,6 +1064,25 @@
             camera.updateProjectionMatrix();
             renderer.setSize(canvas.offsetWidth, canvas.offsetHeight);
         });
+
+        // 포즈 오프셋 업데이트 함수
+function updatePoseOffset(axis, value) {
+    value = parseFloat(value);
+    poseOffset[axis] = value;
+    document.getElementById(`pose-${axis}`).value = value.toFixed(3);
+    if (currentFrame >= 0) {
+        loadFrame(currentFrame);  // 현재 프레임 다시 로드
+    }
+}
+
+// 포즈 스케일 업데이트 함수
+function updatePoseScale(value) {
+    poseScale = parseFloat(value);
+    document.getElementById('pose-scale').value = poseScale.toFixed(3);
+    if (currentFrame >= 0) {
+        loadFrame(currentFrame);  // 현재 프레임 다시 로드
+    }
+}
     </script>
 </body>
 </html> 
