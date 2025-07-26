@@ -4,10 +4,9 @@ from pymongo import MongoClient
 from bson import ObjectId
 
 # 1) 서버 URI, DB/컬렉션명, 고정 chapter_id, 엑셀 파일 경로 설정
-MONGO_URI        = 'mongodb+srv://sehyun5004:qwe123@waterandfish.uxyepd5.mongodb.net/'
 DATABASE_NAME    = 'waterandfish'
 COLLECTION_NAME  = 'Lessons'
-CHAPTER_ID       = ObjectId('68626372cba901ab2b744fb9')
+CHAPTER_ID       = ObjectId('')
 EXCEL_FILE_PATH  = 'uniqueList.xlsx'
 
 # 2) created_at 고정값 (2025-07-04 00:00:00)

@@ -1,7 +1,7 @@
 from pymongo import MongoClient
 
 # MongoDB 연결 정보
-MONGO_URI = 'mongodb+srv://sehyun5004:qwe123@waterandfish.uxyepd5.mongodb.net/'
+
 DATABASE_NAME = 'waterandfish'
 COLLECTION_NAME = 'Lessons'
 
