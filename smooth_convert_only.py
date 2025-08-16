@@ -12,6 +12,7 @@ import argparse
 from scipy.signal import savgol_filter
 from scipy.interpolate import PchipInterpolator
 from pykalman import KalmanFilter
+import pandas as pd
 
 # 설정
 RESULT_DIR = 'result'
@@ -158,82 +159,196 @@ def show_results(json_filename):
     else:
         print("❌ JSON 파일이 생성되지 않았습니다.")
 
-def postprocess_landmarks(all_landmarks,
-                          max_gap=5,          # 보간 허용 프레임 길이
-                          ma_win=3,           # 이동평균 윈도우
-                          sg_win=7, sg_poly=2 # Savitzky–Golay 파라미터
-                          ):
+def postprocess_landmarks(
+    all_landmarks,
+    hampel_win=5,
+    hampel_sig=3.0,
+    kalman_trans_cov=1e-4,
+    kalman_obs_cov=1e-2
+):
     """
-    누락(NaN/0) 보간  ▸  중앙값 이상치 제거  ▸  Savitzky–Golay 스무딩
+    랜드마크 데이터에 대해 PCHIP 보간, Hampel 필터, Kalman 평활화를 순차적으로 적용합니다.
+
+    Args:
+        all_landmarks (dict): {'pose', 'left_hand', 'right_hand'} 키를 가진 랜드마크 딕셔너리.
+                              각 값은 (T, N, 3) 형태의 NumPy 배열입니다.
+        hampel_win (int): Hampel 필터의 윈도우 크기 (홀수 권장).
+        hampel_sig (float): Hampel 필터의 이상치 탐지 시그마 값.
+        kalman_trans_cov (float): Kalman 필터의 상태 전이 공분산.
+        kalman_obs_cov (float): Kalman 필터의 관측 공분산.
+
+    Returns:
+        dict: 후처리된 랜드마크 딕셔너리.
     """
+
     def is_missing(pt):
-        return (pt == 0).all() or np.isnan(pt).any()
+        """점이 누락되었는지(모두 0인지) 확인합니다."""
+        return (pt == 0).all()
 
-    def linear_interp(seq):
-        """seq: (T, D) 배열, 누락(0 또는 NaN)을 선형보간으로 채움"""
-        seq = seq.copy()
-        T = seq.shape[0]
-        valid = ~np.apply_along_axis(is_missing, 1, seq)
+    def pchip_interp_seq(seq, max_gap_to_interpolate=15): # 최대 10프레임까지만 보간
+        """
+        (T, D) 시퀀스에서 누락된 행을 PCHIP으로 보간하되,
+        결측 구간이 max_gap_to_interpolate보다 길면 보간하지 않습니다.
+        """
+        T, D = seq.shape
+        if T == 0: return seq
+
         idx = np.arange(T)
+        valid_mask = ~np.apply_along_axis(is_missing, 1, seq)
+        valid_idx = idx[valid_mask]
 
-        # 누락 전부면 생략
-        if not valid.any(): 
+        if valid_idx.size < 2: return seq.copy()
+
+        # --- [핵심 추가] 결측 구간 길이 체크 ---
+        out = seq.copy()
+        missing_indices = np.where(~valid_mask)[0]
+        
+        # 연속된 결측 구간 찾기
+        from itertools import groupby
+        from operator import itemgetter
+        
+        gaps = []
+        for k, g in groupby(enumerate(missing_indices), lambda ix: ix[0] - ix[1]):
+            gaps.append(list(map(itemgetter(1), g)))
+
+        for gap in gaps:
+            # 결측 구간이 너무 길면 보간하지 않고 건너뛰기
+            if len(gap) > max_gap_to_interpolate:
+                continue
+            
+            start_idx = gap[0] - 1
+            end_idx = gap[-1] + 1
+
+            # 앞뒤에 유효한 데이터가 있어야 보간 가능
+            if start_idx >= 0 and end_idx < T and valid_mask[start_idx] and valid_mask[end_idx]:
+                x_interp = [start_idx, end_idx]
+                y_interp = seq[[start_idx, end_idx]]
+                
+                # 이 구간에 대해서만 보간 수행
+                interpolator = PchipInterpolator(x_interp, y_interp, axis=0, extrapolate=False)
+                out[gap] = interpolator(gap)
+                
+        return out
+
+
+    def hampel_filter_1d(x, win_size, n_sig):
+        """
+        1D Hampel 필터: 이상치(outlier)를 윈도우의 중앙값으로 대체합니다.
+        """
+        L = len(x)
+        if L < win_size:
+            return x
+
+        k = 1.4826  # 정규분포에 대한 스케일 팩터
+        out = x.copy()
+        
+        # Series 객체로 변환하여 롤링 연산 효율화
+        s = pd.Series(x)
+        rolling_median = s.rolling(window=win_size, center=True, min_periods=1).median()
+        
+        def mad_func(x):
+            return np.median(np.abs(x - np.median(x)))
+        
+        rolling_mad = s.rolling(window=win_size, center=True, min_periods=1).apply(mad_func, raw=True)
+        
+        threshold = n_sig * k * rolling_mad
+        outliers_mask = np.abs(s - rolling_median) > threshold
+        
+        out[outliers_mask] = rolling_median[outliers_mask]
+        return out
+
+    def kalman_smooth_seq(seq, trim_margin=5):
+        """
+        (T, D) 시퀀스에서 양 끝의 불안정한 부분을 제외하고
+        핵심 구간에만 Kalman 필터를 적용하여 경계 문제를 완화합니다.
+        """
+        if seq.shape[0] < trim_margin * 2: # 시퀀스가 너무 짧으면 그냥 반환
             return seq
 
-        # 앞뒤 valid 인덱스 추출
-        valid_idx = idx[valid]
-        for d in range(seq.shape[1]):
-            seq[:, d] = np.interp(idx, valid_idx, seq[valid, d])
-        return seq
+        original_seq = seq.copy() # 원본 시퀀스 복사
+        
+        # --- [핵심 추가] 핵심 구간(Core Segment)만 잘라내기 ---
+        
+        # 실제 데이터가 있는 구간을 찾기 위해, 0이 아닌 프레임을 찾습니다.
+        # np.any(seq != 0, axis=1)는 행에 0이 아닌 값이 하나라도 있으면 True를 반환합니다.
+        valid_indices = np.where(np.any(seq != 0, axis=1))[0]
+        
+        if len(valid_indices) < trim_margin * 2: # 유효한 데이터가 너무 적으면 필터링하지 않음
+            return original_seq
 
+        first_valid = valid_indices[0]
+        last_valid = valid_indices[-1]
+
+        # 경계에서 약간의 여유(margin)를 두어 더 안정적인 구간을 선택
+        start = min(first_valid + trim_margin, len(seq) - 1)
+        end = max(last_valid - trim_margin, start + 1)
+        
+        if end <= start: # 구간이 유효하지 않으면 원본 반환
+            return original_seq
+
+        core_segment = original_seq[start:end]
+
+        # --- 코어 구간에만 Kalman 필터 적용 ---
+        T_core, D = core_segment.shape
+        smoothed_core = np.zeros_like(core_segment)
+        
+        for d in range(D):
+            series = core_segment[:, d]
+            # 코어 구간의 첫 번째 점으로 초기 상태 설정
+            kf = KalmanFilter(
+                transition_matrices=[[1, 1], [0, 1]],
+                observation_matrices=[[1, 0]],
+                initial_state_mean=[series[0], 0], 
+                transition_covariance=1e-4 * np.eye(2), # 여기 _covariance는 튜닝의 영역.
+                observation_covariance=1e-3
+            )
+            smoothed_states, _ = kf.smooth(series)
+            smoothed_core[:, d] = smoothed_states[:, 0]
+            
+        # --- 필터링된 코어 구간을 원본 시퀀스에 다시 삽입 ---
+        final_seq = original_seq.copy()
+        final_seq[start:end] = smoothed_core
+        
+        return final_seq
+
+
+    # --- 메인 처리 로직 ---
     processed_landmarks = {}
-    
+    print_step("3-2", "후보정(PCHIP+Hampel+Kalman) 적용")
+
     for key, landmarks in all_landmarks.items():
         if landmarks is None or len(landmarks) == 0:
             processed_landmarks[key] = landmarks
+            print(f"  - [{key}] 데이터 없음, 건너뛰기")
             continue
-            
-        # (T, N, 3) 형태로 변환
-        if len(landmarks.shape) == 2:
-            landmarks = landmarks.reshape(1, -1, 3)
         
-        T, N, D = landmarks.shape
-        processed = np.zeros_like(landmarks)
-        
-        # 각 랜드마크 포인트별로 처리
-        for n in range(N):
-            seq = landmarks[:, n, :]  # (T, 3)
+        print(f"  - [{key}] 랜드마크 처리 중...")
+        arr = np.array(landmarks, dtype=float)
+        T, N, _ = arr.shape
+        processed = np.zeros_like(arr)
+
+        # 각 랜드마크 점(N개)에 대해 파이프라인 적용
+        for j in tqdm(range(N), desc=f"   {key} 필터링", leave=False):
+            seq3d = arr[:, j, :]  # (T, 3) 시퀀스
+
+            # 1단계: PCHIP 보간
+            interp_seq = pchip_interp_seq(seq3d)
+
+            # 2단계: Hampel 필터 (x, y, z 각각 적용)
+            hampel_seq = np.zeros_like(interp_seq)
+            for d in range(3):
+                hampel_seq[:, d] = hampel_filter_1d(interp_seq[:, d], win_size=hampel_win, n_sig=hampel_sig)
+
+            # 3단계: Kalman 평활화
+            smoothed_seq = kalman_smooth_seq(hampel_seq)
             
-            # 1. 선형 보간
-            seq = linear_interp(seq)
-            
-            # 2. 중앙값 이상치 제거 (이동평균 윈도우 사용)
-            if ma_win > 1 and T > ma_win:
-                for d in range(D):
-                    # 이동평균 계산
-                    ma = np.convolve(seq[:, d], np.ones(ma_win)/ma_win, mode='same')
-                    # 중앙값과의 차이 계산
-                    diff = np.abs(seq[:, d] - ma)
-                    # 이상치 임계값 (표준편차의 2배)
-                    threshold = 2 * np.std(diff)
-                    # 이상치를 이동평균으로 대체
-                    outliers = diff > threshold
-                    seq[outliers, d] = ma[outliers]
-            
-            # 3. Savitzky-Golay 스무딩
-            if sg_win > 1 and T > sg_win:
-                for d in range(D):
-                    try:
-                        seq[:, d] = savgol_filter(seq[:, d], sg_win, sg_poly)
-                    except:
-                        # 스무딩 실패 시 원본 유지
-                        pass
-            
-            processed[:, n, :] = seq
-        
+            processed[:, j, :] = smoothed_seq
+
         processed_landmarks[key] = processed
     
     return processed_landmarks
+
+
 
 def main():
     """메인 파이프라인 실행"""
@@ -279,15 +394,12 @@ def main():
         # Step 2: 랜드마크 추출
         landmarks = extract_landmarks_from_video(args.video_path)
         
-        # Step 3-1: 원본(raw) 저장
-        raw_json_filename = save_landmarks_to_json(landmarks, args.video_path, suffix='_raw_landmarks')
         
         # Step 3-2: 후보정(postprocess) 적용 및 저장
         post_landmarks = postprocess_landmarks(landmarks)
-        converted_json_filename = save_landmarks_to_json(post_landmarks, args.video_path, suffix='_converted_landmarks')
+        converted_json_filename = save_landmarks_to_json(post_landmarks, args.video_path, suffix='')
         
         # Step 4: 결과 확인 (원본/후보정 모두)
-        show_results(raw_json_filename)
         show_results(converted_json_filename)
         
         # 완료 메시지
@@ -295,7 +407,6 @@ def main():
         print_header("파이프라인 완료")
         print(f"✅ 모든 작업이 성공적으로 완료되었습니다!")
         print(f"⏱️  총 소요시간: {total_time:.2f}초")
-        print(f"🎯 결과 파일: {raw_json_filename}")
         print(f"📁 결과 디렉토리: {os.path.abspath(RESULT_DIR)}")
         
     except KeyboardInterrupt:

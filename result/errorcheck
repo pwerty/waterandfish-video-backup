@@ -1,0 +1,29 @@
+import os
+from collections import defaultdict
+
+folder = 'result'
+hash_map = defaultdict(list)
+
+for fname in os.listdir(folder):
+    if fname.startswith('past-'):
+        continue
+    path = os.path.join(folder, fname)
+    if not os.path.isfile(path):
+        continue
+    try:
+        with open(path, encoding='utf-8') as f:
+            lines = f.readlines()
+    except UnicodeDecodeError:
+        try:
+            with open(path, encoding='cp949') as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"파일 {fname} 인코딩 오류: {e}")
+            continue
+    if len(lines) >= 7:
+        key = ''.join(lines[4:7])
+        hash_map[key].append(fname)
+
+for files in hash_map.values():
+    if len(files) > 1:
+        print(files)
